@@ -1,3 +1,3 @@
-from model import Diffputer
+from model import DiffPuter
 
-__all__ = ["Diffputer"]
+__all__ = ["DiffPuter"]
