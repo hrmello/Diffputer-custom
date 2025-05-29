@@ -187,10 +187,18 @@ class Model(nn.Module):
 
 class DiffPuter(nn.Module):
 
-    def __init__(self, train_X: np.array, test_X: np.array, train_mask: np.array, test_mask: np.array,
-                result_save_path: str = "../",
-                 num_trials: int = 10, epochs_m_step: int = 10000, patience_m_step: int = 300, batch_size: int = 4096,
-                 hid_dim: int = 1024, device: str = "cuda", max_iter: int = 10, lr: float = 1e-4, num_steps: int = 50, ckpt_dir: str = "ckpt"):
+    def __init__(self, 
+                 result_save_path: str = "../", 
+                 num_trials: int = 10, 
+                 epochs_m_step: int = 10000, 
+                 patience_m_step: int = 300, 
+                 batch_size: int = 4096,
+                 hid_dim: int = 1024, 
+                 device: str = "cuda", 
+                 max_iter: int = 10, 
+                 lr: float = 1e-4, 
+                 num_steps: int = 50, 
+                 ckpt_dir: str = "ckpt"):
 
         # parameters for the whole training step
         self.max_iter = max_iter
@@ -203,7 +211,6 @@ class DiffPuter(nn.Module):
         self.patience_m_step = patience_m_step
         self.hid_dim = hid_dim
         self.lr = lr
-        self.in_dim = train_X.shape[1]
         self.device = device
         
         # parameters for E step
@@ -216,39 +223,34 @@ class DiffPuter(nn.Module):
         self.S_min=0
         self.S_max=float('inf')
         self.S_noise=1
-
-        # data
-        self.mean_X = train_X.mean(0)
-        self.std_X = train_X.std(0)
-
-        self.X = self.standardize_data(train_X)
-
-        self.X_test = self.standardize_data(test_X)
-
-        self.mask_train = torch.Tensor(train_mask)
-        self.mask_test = torch.Tensor(test_mask)
-
-    def compute_metrics(self, iteration, rec_Xs, X_true, mask):
+        
+    def compute_metrics(self, iteration: int, rec_Xs: torch.tensor, X_true: torch.tensor, mask: torch.tensor) -> Tuple[float, float]:
 
         rec_X = torch.stack(rec_Xs, dim = 0).mean(0) 
-        print("rex_X_computemetrics", rec_X)
-        rec_X = rec_X.cpu().numpy() * 2
-        X_true = X_true.cpu().numpy() * 2
+        print("rec_X_computemetrics", rec_X)
+        rec_X = rec_X.cpu().numpy() * 2 
+        X_true = X_true.cpu().numpy() * 2 
 
         print("X_true_computemetrics", X_true)
         np.save(f'{self.ckpt_dir}/iter_{iteration+1}.npy', rec_X)
-
-        pred_X = rec_X[:]
         
-        pred_X = rec_X * self.std_X + self.mean_X
+        print("std_X", self.std_X, "mean_X", self.mean_X)
+        pred_X = rec_X 
         
-
         print("pred_X_computeMetrics", pred_X)
         mae, rmse= self.get_eval(pred_X, X_true, mask)
 
         return mae, rmse
 
-    def fit(self):
+    def fit(self, train_X: np.array, test_X: np.array, train_mask: np.array, test_mask: np.array):
+
+        self.mean_X = train_X.mean(0)
+        self.std_X = train_X.std(0)
+        self.X = self.standardize_data(train_X)
+        self.X_test = self.standardize_data(test_X)
+        self.mask_train = torch.Tensor(train_mask)
+        self.mask_test = torch.Tensor(test_mask)
+        self.in_dim = train_X.shape[1]
 
         for iteration in range(self.max_iter):
 
@@ -288,7 +290,7 @@ class DiffPuter(nn.Module):
 
         return X_stdized
     
-    def _M_step(self, iteration):
+    def _M_step(self, iteration: int):
         if iteration == 0:
             X_miss = (1. - self.mask_train.float()) * self.X
             train_data = X_miss.numpy()
@@ -353,7 +355,6 @@ class DiffPuter(nn.Module):
             if epoch % 1000 == 0:
                 torch.save(model.state_dict(), f'{self.ckpt_dir}/{iteration}/model_{epoch}.pt')
 
-        return 0
 
     def _E_Step(self, iteration, X, mask)-> List:
 

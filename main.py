@@ -77,10 +77,17 @@ if __name__ == '__main__':
     os.makedirs(result_save_path) if not os.path.exists(result_save_path) else None
     
     
-    diffputer = DiffPuter(train_X = train_X, test_X = test_X, train_mask = train_mask, test_mask = test_mask,
-                 result_save_path = result_save_path,
-                 num_trials = 1, epochs_m_step = 5, patience_m_step = 300, batch_size = 4096,
-                 hid_dim = 1024, device = "cuda", max_iter = 10, lr = 1e-4, num_steps = 50, ckpt_dir = "/home/kunumi/Área de trabalho/Diffputer-custom")
+    diffputer = DiffPuter(result_save_path = result_save_path,
+                          num_trials = 10, 
+                          epochs_m_step = 10000, 
+                          patience_m_step = 200, 
+                          batch_size = 8192,
+                          hid_dim = 1024, 
+                          device = "cuda", 
+                          max_iter = 10, 
+                          lr = 1e-4, 
+                          num_steps = 50, 
+                          ckpt_dir = "/home/kunumi/Área de trabalho/Diffputer-custom")
     
-    diffputer.fit()
+    diffputer.fit(train_X = train_X, test_X = test_X, train_mask = train_mask, test_mask = test_mask)
     gc.collect()
