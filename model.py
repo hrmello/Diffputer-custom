@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from losses import *
 import os 
+from generate_mask import * 
 
 ModuleType = Union[str, Callable[..., nn.Module]]
 
@@ -226,62 +227,88 @@ class DiffPuter(nn.Module):
         
     def compute_metrics(self, iteration: int, rec_Xs: torch.tensor, X_true: torch.tensor, mask: torch.tensor) -> Tuple[float, float]:
 
+        # reconstructed X is the mean value of each rec_X made in each trial of the E-step
         rec_X = torch.stack(rec_Xs, dim = 0).mean(0) 
-        print("rec_X_computemetrics", rec_X)
+
+        # multiplication by 2 due to standardization. MinMaxScaler should enter here
         rec_X = rec_X.cpu().numpy() * 2 
         X_true = X_true.cpu().numpy() * 2 
 
-        print("X_true_computemetrics", X_true)
         np.save(f'{self.ckpt_dir}/iter_{iteration+1}.npy', rec_X)
         
-        print("std_X", self.std_X, "mean_X", self.mean_X)
         pred_X = rec_X 
         
-        print("pred_X_computeMetrics", pred_X)
         mae, rmse= self.get_eval(pred_X, X_true, mask)
 
         return mae, rmse
 
-    def fit(self, train_X: np.array, test_X: np.array, train_mask: np.array, test_mask: np.array):
+    def fit(self, train_X: np.array):
 
-        self.mean_X = train_X.mean(0)
-        self.std_X = train_X.std(0)
-        self.X = self.standardize_data(train_X)
-        self.X_test = self.standardize_data(test_X)
+        train_mask = self.generate_mask(train_X, mask_type = "MCAR", p = 0.3)
+
+        # self.mean_X = train_X.mean(0)
+        # self.std_X = train_X.std(0)
+        # self.X = self.standardize_data(train_X)
+
+        self.X = self.min_max_scaler(train_X)
         self.mask_train = torch.Tensor(train_mask)
-        self.mask_test = torch.Tensor(test_mask)
         self.in_dim = train_X.shape[1]
 
         for iteration in range(self.max_iter):
 
-            print('"iteração:', iteration)
+            print("Iteration:", iteration)
             os.makedirs(f'{self.ckpt_dir}/{iteration}', exist_ok=True) if not os.path.exists(f'{self.ckpt_dir}/{iteration}') else None
 
+            print("Start M-step")
             self._M_step(iteration)
 
+            print("Start E-step")
             # reconstructed training data during the E-step 
             rec_Xs_train = self._E_Step(iteration, self.X, self.mask_train)
 
-            print("recxstrain",rec_Xs_train[0])
-
             mae_train, rmse_train = self.compute_metrics(iteration, rec_Xs_train, self.X, self.mask_train)
-        
-            # reconstructed test data during the E-step
-            rec_Xs_test = self._E_Step(iteration, self.X_test, self.mask_test)
 
-            print("recxstest",rec_Xs_test[0])
-
-            mae_test, rmse_test = self.compute_metrics(iteration, rec_Xs_test, self.X_test, self.mask_test)
+            print(f'Saving results to {self.result_save_path}')
 
             with open (f'{self.result_save_path}/result.txt', 'a+') as f:
 
-                f.write(f'iteration {iteration}, MAE: in-sample: {mae_train}, out-of-sample: {mae_test} \n')
-                f.write(f'iteration {iteration}: RMSE: in-sample: {rmse_train}, out-of-sample: {rmse_test} \n')
+                f.write(f'iteration {iteration}, MAE: in-sample: {mae_train} \n')#, out-of-sample: {mae_test} \n')
+                f.write(f'iteration {iteration}: RMSE: in-sample: {rmse_train} \n') #, out-of-sample: {rmse_test} \n')
 
-            print('in-sample', mae_train, rmse_train)
-            print('out-of-sample', mae_test, rmse_test)
+            print('In-sample metrics', mae_train, rmse_train)
 
-            print(f'saving results to {self.result_save_path}')
+            
+
+    def generate_mask(train_X, mask_type, p):
+
+        print('missing probability:', p)
+
+        #p = p / (1 - 0.3) # 30% will held out and not missing, so we need to adjust the missing probability 
+        q = 0.3
+        if p > 0.3:
+            q = 0.1
+        
+        if mask_type == 'MCAR':
+            #train_mask = (torch.rand(train_X.shape) < p).numpy()
+            #test_mask = (torch.rand(test_X.shape) < p).numpy()
+            train_mask = np.random.rand(*train_X.shape) < p
+            # test_mask = np.random.rand(*test_X.shape) < p
+        elif mask_type == 'MAR':
+            train_mask = MAR_mask(train_X, p=p/(1-q), p_obs=q)
+            # test_mask = MAR_mask(test_X, p=p/(1-q), p_obs=q)
+        elif mask_type == 'MNAR_logistic_T1':
+            train_mask = MNAR_mask_logistic(train_X, p=0.3, p_obs=0.3, exclude_inputs=False)
+            # test_mask = MNAR_mask_logistic(test_X, p=0.3, p_obs=0.3, exclude_inputs=False)
+        elif mask_type == 'MNAR_self_logistic':
+            train_mask = MNAR_self_mask_logistic(train_X, p=0.3)
+            # test_mask = MNAR_self_mask_logistic(test_X, p=0.3)
+        elif mask_type == 'MNAR_quantiles':
+            train_mask = MNAR_mask_quantiles(train_X, 0.3, 0.25, 0.3, cut='both', MCAR=False)
+            # test_mask = MNAR_mask_quantiles(test_X, 0.3, 0.25, 0.3, cut='both', MCAR=False)
+        else:
+            raise ValueError('Invalid mask type, please choose from MCAR, MAR, MNAR_logistic_T2')
+            
+        return train_mask #, test_mask
 
     def standardize_data(self, X: np.array) -> np.array:
 
@@ -290,6 +317,23 @@ class DiffPuter(nn.Module):
 
         return X_stdized
     
+    def min_max_scaler(self, X: np.array) -> np.array:
+        _, self.dim = X.shape
+        X = X.cpu()
+        eps = 0.001
+
+        min_val= np.zeros(self.in_dim)
+        max_val = np.zeros(self.in_dim)
+
+        for i in range(self.self.in_dim):
+            min_val[i] = np.nanmin(X[:,i]) 
+            max_val[i] = np.nanmax(X[:,i])
+
+            X[:,i] = (X[:,i] - min_val[i])/(max_val[i] - min_val[i] + eps)
+
+        return X
+
+        
     def _M_step(self, iteration: int):
         if iteration == 0:
             X_miss = (1. - self.mask_train.float()) * self.X
@@ -306,7 +350,6 @@ class DiffPuter(nn.Module):
             num_workers = 4,
         )
 
-        print("X miss M step:", X_miss)
         denoise_fn = MLPDiffusion(self.in_dim, self.hid_dim).to(self.device)
         print(denoise_fn)
 
@@ -360,10 +403,8 @@ class DiffPuter(nn.Module):
 
         rec_Xs = []
 
-        print("X E step", X)
-
         for trial in range(self.num_trials):
-        
+            print(f'Iteration {iteration}, Trial = {trial}')
             X_miss = (1. - mask.float()) * X
             X_miss = X_miss.to(self.device)
             impute_X = X_miss
@@ -384,17 +425,11 @@ class DiffPuter(nn.Module):
 
             num_samples, dim = X.shape[0], X.shape[1]
 
-            print("impute_X", impute_X)
             rec_X = self.impute_mask(net, impute_X, mask, num_samples, dim)
-
-            print("rec_X", rec_X)
             
             mask_int = mask.to(torch.float).to(self.device)
             rec_X = rec_X * mask_int + impute_X * (1-mask_int)
             rec_Xs.append(rec_X)
-            
-            print("rec_X after", rec_X)
-            print(f'Trial = {trial}')
 
         return rec_Xs
     
@@ -459,10 +494,6 @@ class DiffPuter(nn.Module):
     
     def get_eval(self, X_recon: np.array, X_true: np.array, mask: np.array) -> Tuple[float, float]:
 
-        # mae = np.abs(num_pred[num_mask] - num_true[num_mask]).mean()
-        # rmse = np.sqrt(((num_pred[num_mask] - num_true[num_mask])**2).mean())
-        print("mask", mask)
-        print("X_recon", X_recon)
         mask = mask.numpy()
         mask = mask.astype(bool)
 
