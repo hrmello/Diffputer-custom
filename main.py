@@ -89,5 +89,6 @@ if __name__ == '__main__':
                           num_steps = 50, 
                           ckpt_dir = "/home/kunumi/Área de trabalho/Diffputer-custom")
     
-    diffputer.fit(train_X = train_X, test_X = test_X, train_mask = train_mask, test_mask = test_mask)
+    diffputer.fit(train_X = train_X)
+    
     gc.collect()
