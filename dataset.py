@@ -25,15 +25,8 @@ def load_dataset(datadir):
     # remove target column
     train_df = train_df.iloc[:,:-1]
     test_df = test_df.iloc[:,:-1]
-
-    print(train_df.values.shape)
-    train_mask, test_mask = generate_mask(train_df.values, test_df.values, mask_type = "MCAR", p = 0.3)
-    print(train_mask.shape)
-
+    
     train_X = train_df.values.astype(np.float32)
     
-    test_X = test_df.values.astype(np.float32)
-    
-    return train_X, test_X, train_mask, test_mask
-
+    return train_X
 

@@ -310,7 +310,7 @@ def fit_intercepts(X, coeffs, p, self_mask=False):
             intercepts[j] = optimize.bisect(f, left, right)
     return intercepts
 
-def generate_mask(train_X, test_X, mask_type, p):
+def generate_mask(train_X, mask_type, p):
 
     print('missing probability:', p)
 
@@ -320,23 +320,21 @@ def generate_mask(train_X, test_X, mask_type, p):
         q = 0.1
     
     if mask_type == 'MCAR':
-        #train_mask = (torch.rand(train_X.shape) < p).numpy()
-        #test_mask = (torch.rand(test_X.shape) < p).numpy()
         train_mask = np.random.rand(*train_X.shape) < p
-        test_mask = np.random.rand(*test_X.shape) < p
+        
     elif mask_type == 'MAR':
         train_mask = MAR_mask(train_X, p=p/(1-q), p_obs=q)
-        test_mask = MAR_mask(test_X, p=p/(1-q), p_obs=q)
+        
     elif mask_type == 'MNAR_logistic_T1':
         train_mask = MNAR_mask_logistic(train_X, p=0.3, p_obs=0.3, exclude_inputs=False)
-        test_mask = MNAR_mask_logistic(test_X, p=0.3, p_obs=0.3, exclude_inputs=False)
+        
     elif mask_type == 'MNAR_self_logistic':
         train_mask = MNAR_self_mask_logistic(train_X, p=0.3)
-        test_mask = MNAR_self_mask_logistic(test_X, p=0.3)
+        
     elif mask_type == 'MNAR_quantiles':
         train_mask = MNAR_mask_quantiles(train_X, 0.3, 0.25, 0.3, cut='both', MCAR=False)
-        test_mask = MNAR_mask_quantiles(test_X, 0.3, 0.25, 0.3, cut='both', MCAR=False)
+        
     else:
         raise ValueError('Invalid mask type, please choose from MCAR, MAR, MNAR_logistic_T2')
         
-    return train_mask, test_mask
+    return train_mask

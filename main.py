@@ -39,6 +39,7 @@ if __name__ == '__main__':
     "max_iter": 10, "ratio": 30, "hid_dim": 1024, "mask": "MCAR", 
         "num_trials": 5, "num_steps": 50, "device": "gpu"}
 
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     datadir = args["datadir"]
     dataname = args["dataname"]
@@ -49,38 +50,29 @@ if __name__ == '__main__':
     ratio = args["ratio"]
     num_trials = args["num_trials"]
     num_steps = args["num_steps"]
-    patience_limit = 300
-
+ 
+    print(torch.cuda.is_available())
     if mask_type == 'MNAR':
         mask_type = 'MNAR_logistic_T2'
 
-    train_X, test_X, train_mask, test_mask = load_dataset(datadir = datadir)
+    train_X= load_dataset(datadir = datadir)
 
     train_X = impute_with_column_means(train_X)
 
-    test_X = impute_with_column_means(test_X)
-
     # remove target column
     train_X = train_X[:,:-1]
-    test_X = test_X[:,:-1]
-    train_mask = train_mask[:,:-1]
-    test_mask = test_mask[:,:-1]
-
+    
     mean_X = train_X.mean(0)
     std_X = train_X.std(0)
     in_dim = train_X.shape[1]
 
-    mask_train = torch.tensor(train_mask)
-    mask_test = torch.tensor(test_mask)
-
     result_save_path = f'results/{dataname}/rate{ratio}/{mask_type}/{split_idx}/{num_trials}_{num_steps}'
     os.makedirs(result_save_path) if not os.path.exists(result_save_path) else None
-    
     
     diffputer = DiffPuter(result_save_path = result_save_path,
                           num_trials = 10, 
                           epochs_m_step = 10000, 
-                          patience_m_step = 200, 
+                          patience_m_step = 300, 
                           batch_size = 8192,
                           hid_dim = 1024, 
                           device = "cuda", 
@@ -89,5 +81,5 @@ if __name__ == '__main__':
                           num_steps = 50, 
                           ckpt_dir = "/home/kunumi/Área de trabalho/Diffputer-custom")
     
-    diffputer.fit(train_X = train_X, test_X = test_X, train_mask = train_mask, test_mask = test_mask)
+    diffputer.fit(train_X = train_X)
     gc.collect()
